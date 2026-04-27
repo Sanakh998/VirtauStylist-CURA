@@ -53,9 +53,41 @@ interface DailyPickEntry {
   source: 'wardrobe' | 'generated';
 }
 
+// Utility to compress base64 images to stay under Firestore's 1MB limit
+async function compressImage(base64Str: string, maxWidth = 800, maxHeight = 800, quality = 0.7): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.src = base64Str;
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      let width = img.width;
+      let height = img.height;
+
+      if (width > height) {
+        if (width > maxWidth) {
+          height *= maxWidth / width;
+          width = maxWidth;
+        }
+      } else {
+        if (height > maxHeight) {
+          width *= maxHeight / height;
+          height = maxHeight;
+        }
+      }
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d');
+      ctx?.drawImage(img, 0, 0, width, height);
+      resolve(canvas.toDataURL('image/jpeg', quality));
+    };
+    img.onerror = (e) => reject(e);
+  });
+}
+
 export default function App() {
   const [step, setStep] = useState<Step>('upload');
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
+  const [compressedBaseItem, setCompressedBaseItem] = useState<string | null>(null);
   const [mimeType, setMimeType] = useState<string>('');
   const [analysis, setAnalysis] = useState<StylingAnalysis | null>(null);
   const [outfits, setOutfits] = useState<EnhancedOutfit[]>([]);
@@ -116,8 +148,9 @@ export default function App() {
         } else {
           // Generate anew
           const generated = await generateDailyInspiration();
-          const imageUrl = await generateOutfitImage(generated.imagePrompt);
-          outfitToSave = { ...generated, imageUrl };
+          const rawImageUrl = await generateOutfitImage(generated.imagePrompt);
+          const compressedImageUrl = await compressImage(rawImageUrl);
+          outfitToSave = { ...generated, imageUrl: compressedImageUrl };
           source = 'generated';
         }
 
@@ -165,13 +198,17 @@ export default function App() {
     try {
       setLoadingWardrobe(true);
       const path = `users/${user.uid}/wardrobe`;
+      // Ensure we use compressed images for wardrobe storage
+      const finalBaseImage = compressedBaseItem || (selectedImage ? await compressImage(selectedImage) : "");
+      const finalOutfitImage = outfit.imageUrl ? await compressImage(outfit.imageUrl) : "";
+
       await addDoc(collection(db, path), {
         userId: user.uid,
         outfitType: outfit.outfitType,
         description: outfit.description,
         complementaryItems: outfit.complementaryItems,
-        imageUrl: outfit.imageUrl,
-        baseItemImage: selectedImage,
+        imageUrl: finalOutfitImage,
+        baseItemImage: finalBaseImage,
         savedAt: serverTimestamp()
       });
       await fetchWardrobe(user.uid);
@@ -185,12 +222,13 @@ export default function App() {
   const saveToHistory = async (analysisData: StylingAnalysis, baseImage: string) => {
     if (!user) return;
     try {
+      const compressed = await compressImage(baseImage, 600, 600, 0.6);
       const path = `users/${user.uid}/history`;
       await addDoc(collection(db, path), {
         userId: user.uid,
         itemType: analysisData.itemType,
         itemDescription: analysisData.itemDescription,
-        baseItemImage: baseImage,
+        baseItemImage: compressed,
         analysis: analysisData,
         createdAt: serverTimestamp()
       });
@@ -221,9 +259,17 @@ export default function App() {
 
     setMimeType(file.type);
     const reader = new FileReader();
-    reader.onload = (event) => {
-      setSelectedImage(event.target?.result as string);
+    reader.onload = async (event) => {
+      const result = event.target?.result as string;
+      setSelectedImage(result);
       setError(null);
+      // Pre-compress for later use
+      try {
+        const compressed = await compressImage(result, 800, 800, 0.7);
+        setCompressedBaseItem(compressed);
+      } catch (e) {
+        console.error("Compression failed", e);
+      }
     };
     reader.readAsDataURL(file);
   };
@@ -252,7 +298,8 @@ export default function App() {
       // Generate images in parallel
       const imagePromises = initialOutfits.map(async (outfit, index) => {
         try {
-          const imageUrl = await generateOutfitImage(outfit.imagePrompt);
+          const rawImageUrl = await generateOutfitImage(outfit.imagePrompt);
+          const imageUrl = await compressImage(rawImageUrl); // Compress immediately
           setOutfits(prev => prev.map((o, i) => i === index ? { ...o, imageUrl, loadingImage: false } : o));
         } catch (err) {
           console.error(`Failed to generate image for ${outfit.outfitType}`, err);
@@ -272,6 +319,7 @@ export default function App() {
   const reset = () => {
     setStep('upload');
     setSelectedImage(null);
+    setCompressedBaseItem(null);
     setAnalysis(null);
     setOutfits([]);
     setError(null);
