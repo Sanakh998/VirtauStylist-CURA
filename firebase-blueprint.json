@@ -1,0 +1,74 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "User profile and settings",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "email": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "email", "createdAt"]
+    },
+    "Outfit": {
+      "title": "Outfit",
+      "description": "A saved outfit suggestion",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "outfitType": { "type": "string", "enum": ["Casual", "Business", "Night Out"] },
+        "description": { "type": "string" },
+        "complementaryItems": { "type": "array", "items": { "type": "string" } },
+        "imageUrl": { "type": "string" },
+        "baseItemImage": { "type": "string" },
+        "savedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "outfitType", "description", "complementaryItems", "imageUrl", "baseItemImage", "savedAt"]
+    },
+    "History": {
+      "title": "Style History",
+      "description": "A past styling analysis",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "itemType": { "type": "string" },
+        "itemDescription": { "type": "string" },
+        "baseItemImage": { "type": "string" },
+        "analysis": { "type": "object" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "itemType", "itemDescription", "baseItemImage", "analysis", "createdAt"]
+    },
+    "DailyPick": {
+      "title": "Daily Pick",
+      "description": "The curated outfit for a specific day",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "date": { "type": "string" },
+        "outfit": { "type": "object" },
+        "source": { "type": "string", "enum": ["wardrobe", "generated"] }
+      },
+      "required": ["userId", "date", "outfit", "source"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "Individual user records"
+    },
+    "/users/{userId}/wardrobe/{outfitId}": {
+      "schema": "Outfit",
+      "description": "User's saved outfits"
+    },
+    "/users/{userId}/history/{historyId}": {
+      "schema": "History",
+      "description": "Chronological list of past stylish analyses"
+    },
+    "/users/{userId}/dailyPicks/{date}": {
+      "schema": "DailyPick",
+      "description": "Daily curated style inspiration"
+    }
+  }
+}
